@@ -5,4 +5,4 @@
 ชื่อทีม: ทีม <N>
 ห้องประชุม: ห้องอบรม SAGE Camp
 เวลาประชุมทีม: 10:00
-ช่องทางติดต่อ: GitHub Discussions ของ repo น ี้
+ช่องทางติดต่อ: GitHub Discussions ของ repo นี้
