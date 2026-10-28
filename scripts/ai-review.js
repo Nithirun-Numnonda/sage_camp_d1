@@ -20,11 +20,17 @@ if (!OPENROUTER_API_KEY) {
   process.exit(0);
 }
 
-const diff = execFileSync(
-  'git',
-  ['diff', `origin/${BASE_REF}...HEAD`, '--', '.', ':(exclude)workshops', ':(exclude)package-lock.json'],
-  { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
-);
+let diff;
+try {
+  diff = execFileSync(
+    'git',
+    ['diff', `origin/${BASE_REF}...HEAD`, '--', '.', ':(exclude)workshops', ':(exclude)package-lock.json'],
+    { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
+  );
+} catch (err) {
+  console.error(`git diff ล้มเหลว: ${err.message}`);
+  process.exit(1);
+}
 
 if (!diff.trim()) {
   console.log('ไม่มี diff ให้ review');
@@ -54,22 +60,28 @@ ${rules}`;
 
 const user = `diff ของ PR${truncated ? ` (ถูกตัดเหลือ ${limit} ตัวอักษรแรก — ระบุในสรุปว่า review ไม่ครบ)` : ''}:\n\n${diffText}`;
 
-const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-  method: 'POST',
-  headers: {
-    Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-    'Content-Type': 'application/json',
-    'X-Title': 'practice-app AI Review',
-  },
-  body: JSON.stringify({
-    model: OPENROUTER_MODEL,
-    temperature: 0.2,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-  }),
-});
+let res;
+try {
+  res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'X-Title': 'practice-app AI Review',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  });
+} catch (err) {
+  console.error(`เรียก OpenRouter ไม่สำเร็จ: ${err.message}`);
+  process.exit(1);
+}
 
 if (!res.ok) {
   console.error(`OpenRouter ตอบ ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -101,20 +113,25 @@ const gh = (url, init = {}) =>
     },
   });
 
-// อัปเดตคอมเมนต์เดิมของบอท แทนการโพสต์ซ้ำทุกครั้งที่ push
-const listRes = await gh(`${api}/${PR_NUMBER}/comments?per_page=100`);
-if (!listRes.ok) {
-  console.error(`อ่านคอมเมนต์ไม่สำเร็จ: ${listRes.status}`);
+try {
+  // อัปเดตคอมเมนต์เดิมของบอท แทนการโพสต์ซ้ำทุกครั้งที่ push
+  const listRes = await gh(`${api}/${PR_NUMBER}/comments?per_page=100`);
+  if (!listRes.ok) {
+    console.error(`อ่านคอมเมนต์ไม่สำเร็จ: ${listRes.status}`);
+    process.exit(1);
+  }
+  const existing = (await listRes.json()).find((c) => c.body?.startsWith(MARKER));
+
+  const saveRes = existing
+    ? await gh(`${api}/comments/${existing.id}`, { method: 'PATCH', body: JSON.stringify({ body }) })
+    : await gh(`${api}/${PR_NUMBER}/comments`, { method: 'POST', body: JSON.stringify({ body }) });
+
+  if (!saveRes.ok) {
+    console.error(`โพสต์คอมเมนต์ไม่สำเร็จ: ${saveRes.status} ${(await saveRes.text()).slice(0, 300)}`);
+    process.exit(1);
+  }
+  console.log('โพสต์ผล AI Review แล้ว');
+} catch (err) {
+  console.error(`GitHub API ล้มเหลว: ${err.message}`);
   process.exit(1);
 }
-const existing = (await listRes.json()).find((c) => c.body?.startsWith(MARKER));
-
-const saveRes = existing
-  ? await gh(`${api}/comments/${existing.id}`, { method: 'PATCH', body: JSON.stringify({ body }) })
-  : await gh(`${api}/${PR_NUMBER}/comments`, { method: 'POST', body: JSON.stringify({ body }) });
-
-if (!saveRes.ok) {
-  console.error(`โพสต์คอมเมนต์ไม่สำเร็จ: ${saveRes.status} ${(await saveRes.text()).slice(0, 300)}`);
-  process.exit(1);
-}
-console.log('โพสต์ผล AI Review แล้ว');
