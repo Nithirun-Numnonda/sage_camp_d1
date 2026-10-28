@@ -10,6 +10,8 @@ import { validateAnnouncement } from '../validation.js';
 export function register(router, { store }) {
   router.patch('/announcements/:id', (req, res) => {
     const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'ไม่พบประกาศ' });
+
     const item = store.get(id);
     if (!item) return res.status(404).json({ error: 'ไม่พบประกาศ' });
 
